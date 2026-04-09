@@ -17,8 +17,8 @@ type Config struct {
 
 func defaultConfig() Config {
 	return Config{
-		FolderZrodlowy:     "D:/Polaris/data/EdgeMillData",
-		FolderKopii:        "D:/KopieZapasowe/EdgeMillData",
+		FolderZrodlowy:     `D:\Polaris\data\EdgeMillData`,
+		FolderKopii:        `D:\KopieZapasowe\EdgeMillData`,
 		InterwalSekundy:    10,
 		RozszerzeniaPlikow: []string{".json"},
 	}
