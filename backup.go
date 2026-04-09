@@ -13,6 +13,15 @@ import (
 // Structure: <backupRoot>/<YYYY-MM-DD>/<filename>
 // On name collision appends timestamp: file_150405.json
 func BackupFile(srcPath string, backupRoot string) (string, error) {
+	// Skip empty files (0 bytes)
+	info, err := os.Stat(srcPath)
+	if err != nil {
+		return "", fmt.Errorf("cannot read file: %w", err)
+	}
+	if info.Size() == 0 {
+		return "", fmt.Errorf("skipped (0 bytes)")
+	}
+
 	today := time.Now().Format("2006-01-02")
 	dayDir := filepath.Join(backupRoot, today)
 
