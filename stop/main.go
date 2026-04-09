@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 )
 
@@ -29,5 +30,6 @@ func main() {
 	}
 
 	fmt.Println("\nPress Enter to close...")
-	fmt.Scanln()
+	buf := make([]byte, 1)
+	os.Stdin.Read(buf)
 }
