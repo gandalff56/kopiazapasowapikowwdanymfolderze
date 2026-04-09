@@ -1,7 +1,15 @@
 @echo off
-taskkill /IM FolderBackupSilent.exe /F 2>nul
-taskkill /IM FolderBackup.exe /F 2>nul
+net session >nul 2>&1
+if %errorlevel% neq 0 (
+    powershell -Command "Start-Process '%~f0' -Verb RunAs"
+    exit /b
+)
+
+echo Stopping backup processes...
 echo.
-echo Backup stopped.
+taskkill /IM FolderBackupSilent.exe /F
+taskkill /IM FolderBackup.exe /F
+echo.
+echo Done.
 echo.
 pause
