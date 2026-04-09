@@ -9,21 +9,21 @@ import (
 	"time"
 )
 
-// BackupFile kopiuje plik do folderu backupu zorganizowanego wg daty
-// Struktura: <folderKopii>/<YYYY-MM-DD>/<nazwa_pliku>
-// Przy kolizji nazw dodaje timestamp: plik_150405.json
+// BackupFile copies a file to a date-organized backup folder
+// Structure: <backupRoot>/<YYYY-MM-DD>/<filename>
+// On name collision appends timestamp: file_150405.json
 func BackupFile(srcPath string, backupRoot string) (string, error) {
 	today := time.Now().Format("2006-01-02")
 	dayDir := filepath.Join(backupRoot, today)
 
 	if err := os.MkdirAll(dayDir, 0755); err != nil {
-		return "", fmt.Errorf("nie można utworzyć folderu %s: %w", dayDir, err)
+		return "", fmt.Errorf("cannot create folder %s: %w", dayDir, err)
 	}
 
 	srcName := filepath.Base(srcPath)
 	dstPath := filepath.Join(dayDir, srcName)
 
-	// Jeśli plik już istnieje, dodaj timestamp do nazwy
+	// If file already exists, append timestamp to name
 	if _, err := os.Stat(dstPath); err == nil {
 		ext := filepath.Ext(srcName)
 		nameNoExt := strings.TrimSuffix(srcName, ext)
@@ -33,13 +33,13 @@ func BackupFile(srcPath string, backupRoot string) (string, error) {
 	}
 
 	if err := copyFile(srcPath, dstPath); err != nil {
-		return "", fmt.Errorf("nie można skopiować pliku: %w", err)
+		return "", fmt.Errorf("cannot copy file: %w", err)
 	}
 
 	return dstPath, nil
 }
 
-// copyFile kopiuje plik atomowo: zapis do pliku tymczasowego + rename
+// copyFile copies a file atomically: write to temp file + rename
 func copyFile(src, dst string) error {
 	srcFile, err := os.Open(src)
 	if err != nil {
@@ -47,7 +47,7 @@ func copyFile(src, dst string) error {
 	}
 	defer srcFile.Close()
 
-	// Zapisz do pliku tymczasowego w tym samym katalogu
+	// Write to temp file in the same directory
 	tmpPath := dst + ".tmp"
 	tmpFile, err := os.Create(tmpPath)
 	if err != nil {
@@ -63,6 +63,6 @@ func copyFile(src, dst string) error {
 		return err
 	}
 
-	// Przenieś plik tymczasowy na docelowy
+	// Rename temp file to destination
 	return os.Rename(tmpPath, dst)
 }

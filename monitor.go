@@ -1,28 +1,27 @@
 package main
 
 import (
-	"os"
+	"log"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 )
 
-// FileState przechowuje stan pliku z ostatniego skanowania
-type FileState struct {
-	ModTime time.Time
-	Size    int64
-	Stable  bool // true jeśli plik nie zmienił się między dwoma skanami
-}
-
-// Monitor śledzi zmiany w folderze źródłowym
+// Monitor watches a folder for file changes using OS-level events
 type Monitor struct {
 	sourceDir  string
 	extensions map[string]bool
-	knownFiles map[string]FileState
+	backupRoot string
+	logger     *log.Logger
+	debounce   map[string]*time.Timer
+	mu         sync.Mutex
 }
 
-// NewMonitor tworzy nowy monitor
-func NewMonitor(sourceDir string, extensions []string) *Monitor {
+// NewMonitor creates a new event-based monitor
+func NewMonitor(sourceDir string, extensions []string, backupRoot string, logger *log.Logger) *Monitor {
 	extMap := make(map[string]bool)
 	for _, ext := range extensions {
 		extMap[strings.ToLower(ext)] = true
@@ -30,85 +29,87 @@ func NewMonitor(sourceDir string, extensions []string) *Monitor {
 	return &Monitor{
 		sourceDir:  sourceDir,
 		extensions: extMap,
-		knownFiles: make(map[string]FileState),
+		backupRoot: backupRoot,
+		logger:     logger,
+		debounce:   make(map[string]*time.Timer),
 	}
 }
 
-// Scan skanuje folder i zwraca listę ścieżek plików gotowych do backupu
-// Plik jest "gotowy" dopiero gdy jego ModTime i Size nie zmieniły się
-// między dwoma kolejnymi skanami (zabezpieczenie przed kopiowaniem w trakcie zapisu)
-func (m *Monitor) Scan() []string {
-	var ready []string
-
-	entries, err := os.ReadDir(m.sourceDir)
+// Watch starts watching the folder for changes (blocking)
+// It uses OS-level filesystem notifications (ReadDirectoryChangesW on Windows)
+// which consume near-zero CPU when idle
+func (m *Monitor) Watch(done <-chan struct{}) error {
+	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		return nil
+		return err
+	}
+	defer watcher.Close()
+
+	if err := watcher.Add(m.sourceDir); err != nil {
+		return err
 	}
 
-	currentFiles := make(map[string]bool)
+	m.logger.Printf("Watching folder: %s", m.sourceDir)
+	m.logger.Printf("Backups saved to: %s", m.backupRoot)
 
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-
-		name := entry.Name()
-		ext := strings.ToLower(filepath.Ext(name))
-		if !m.extensions[ext] {
-			continue
-		}
-
-		fullPath := filepath.Join(m.sourceDir, name)
-		currentFiles[fullPath] = true
-
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-
-		modTime := info.ModTime()
-		size := info.Size()
-
-		prev, exists := m.knownFiles[fullPath]
-
-		if !exists {
-			// Nowy plik - zapamiętaj stan, będzie gotowy przy następnym skanie
-			m.knownFiles[fullPath] = FileState{
-				ModTime: modTime,
-				Size:    size,
-				Stable:  false,
+	for {
+		select {
+		case event, ok := <-watcher.Events:
+			if !ok {
+				return nil
 			}
-			continue
-		}
+			m.handleEvent(event)
 
-		if prev.ModTime.Equal(modTime) && prev.Size == size {
-			// Plik się nie zmienił od ostatniego skanu
-			if !prev.Stable {
-				// Pierwszy raz stabilny - oznacz jako gotowy do backupu
-				m.knownFiles[fullPath] = FileState{
-					ModTime: modTime,
-					Size:    size,
-					Stable:  true,
-				}
-				ready = append(ready, fullPath)
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				return nil
 			}
-			// Jeśli już był stabilny - nic nie robimy (już skopiowany)
-		} else {
-			// Plik się zmienił - zresetuj stan
-			m.knownFiles[fullPath] = FileState{
-				ModTime: modTime,
-				Size:    size,
-				Stable:  false,
-			}
+			m.logger.Printf("ERROR: watcher error: %s", err)
+
+		case <-done:
+			m.logger.Printf("Stopping watcher...")
+			return nil
 		}
 	}
+}
 
-	// Usuń pliki które już nie istnieją
-	for path := range m.knownFiles {
-		if !currentFiles[path] {
-			delete(m.knownFiles, path)
-		}
+// handleEvent processes a single filesystem event
+func (m *Monitor) handleEvent(event fsnotify.Event) {
+	// Only react to create and write events
+	if !event.Has(fsnotify.Create) && !event.Has(fsnotify.Write) {
+		return
 	}
 
-	return ready
+	// Check file extension
+	ext := strings.ToLower(filepath.Ext(event.Name))
+	if !m.extensions[ext] {
+		return
+	}
+
+	// Debounce: wait 2 seconds after last change before copying
+	// This prevents copying while the file is still being written
+	m.mu.Lock()
+	if timer, exists := m.debounce[event.Name]; exists {
+		timer.Stop()
+	}
+	m.debounce[event.Name] = time.AfterFunc(2*time.Second, func() {
+		m.backupFile(event.Name)
+		m.mu.Lock()
+		delete(m.debounce, event.Name)
+		m.mu.Unlock()
+	})
+	m.mu.Unlock()
+}
+
+// backupFile copies a changed file to the backup folder
+func (m *Monitor) backupFile(srcPath string) {
+	name := filepath.Base(srcPath)
+	m.logger.Printf("Change detected: %s", name)
+
+	dstPath, err := BackupFile(srcPath, m.backupRoot)
+	if err != nil {
+		m.logger.Printf("ERROR copying %s: %s", name, err)
+		return
+	}
+	m.logger.Printf("Backed up to: %s", dstPath)
 }
