@@ -9,18 +9,20 @@ import (
 
 // Config holds program configuration
 type Config struct {
-	FolderZrodlowy     string   `json:"folder_zrodlowy"`
-	FolderKopii        string   `json:"folder_kopii"`
-	InterwalSekundy    int      `json:"interwal_sekundy"`
-	RozszerzeniaPlikow []string `json:"rozszerzenia_plikow"`
+	FolderZrodlowy      string   `json:"folder_zrodlowy"`
+	FolderKopii         string   `json:"folder_kopii"`
+	InterwalSekundy     int      `json:"interwal_sekundy"`
+	RozszerzeniaPlikow  []string `json:"rozszerzenia_plikow"`
+	DniPrzechowywania   int      `json:"dni_przechowywania"`
 }
 
 func defaultConfig() Config {
 	return Config{
 		FolderZrodlowy:     `D:\Polaris\data\EdgeMillData`,
 		FolderKopii:        `D:\KopieZapasowe\EdgeMillData`,
-		InterwalSekundy:    10,
-		RozszerzeniaPlikow: []string{".json"},
+		InterwalSekundy:     10,
+		RozszerzeniaPlikow:  []string{".json"},
+		DniPrzechowywania:   7,
 	}
 }
 
@@ -103,6 +105,10 @@ func validateConfig(cfg *Config) error {
 
 	if len(cfg.RozszerzeniaPlikow) == 0 {
 		cfg.RozszerzeniaPlikow = []string{".json"}
+	}
+
+	if cfg.DniPrzechowywania <= 0 {
+		cfg.DniPrzechowywania = 7
 	}
 
 	return nil

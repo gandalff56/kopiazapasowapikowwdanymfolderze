@@ -48,6 +48,37 @@ func BackupFile(srcPath string, backupRoot string) (string, error) {
 	return dstPath, nil
 }
 
+// CleanOldBackups removes backup folders older than maxDays
+func CleanOldBackups(backupRoot string, maxDays int, logger interface{ Printf(string, ...any) }) {
+	cutoff := time.Now().AddDate(0, 0, -maxDays)
+
+	entries, err := os.ReadDir(backupRoot)
+	if err != nil {
+		return
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		// Parse folder name as date (YYYY-MM-DD)
+		folderDate, err := time.Parse("2006-01-02", entry.Name())
+		if err != nil {
+			continue // skip folders that aren't date-named
+		}
+
+		if folderDate.Before(cutoff) {
+			path := filepath.Join(backupRoot, entry.Name())
+			if err := os.RemoveAll(path); err != nil {
+				logger.Printf("ERROR deleting old backup %s: %s", entry.Name(), err)
+			} else {
+				logger.Printf("Deleted old backup: %s", entry.Name())
+			}
+		}
+	}
+}
+
 // copyFile copies a file atomically: write to temp file + rename
 func copyFile(src, dst string) error {
 	srcFile, err := os.Open(src)

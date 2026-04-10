@@ -50,12 +50,26 @@ func main() {
 	logger.Printf("Watching folder: %s", cfg.FolderZrodlowy)
 	logger.Printf("Backups saved to: %s", cfg.FolderKopii)
 	logger.Printf("Monitored extensions: %v", cfg.RozszerzeniaPlikow)
+	logger.Printf("Keep backups for: %d days", cfg.DniPrzechowywania)
 	if silent {
 		logger.Printf("Running in silent mode (no console)")
 	} else {
 		fmt.Println("Press Ctrl+C to stop")
 		fmt.Println()
 	}
+
+	// Clean old backups at startup
+	CleanOldBackups(cfg.FolderKopii, cfg.DniPrzechowywania, logger)
+
+	// Clean old backups once per day
+	go func() {
+		for {
+			now := time.Now()
+			nextMidnight := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 1, 0, 0, now.Location())
+			time.Sleep(time.Until(nextMidnight))
+			CleanOldBackups(cfg.FolderKopii, cfg.DniPrzechowywania, logger)
+		}
+	}()
 
 	monitor := NewMonitor(cfg.FolderZrodlowy, cfg.RozszerzeniaPlikow, cfg.FolderKopii, logger)
 
